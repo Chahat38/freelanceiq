@@ -1,0 +1,6 @@
+{
+  "name": "FreelanceIQ AI OS",
+  "description": "All-in-one AI workspace and OS for freelancers and remote workers: Proposals, Invoices, Contract Analysis, Scam Detection, Gig Optimization, Client CRM, and AI Mentor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
