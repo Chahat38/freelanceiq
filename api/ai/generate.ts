@@ -29,9 +29,11 @@ export default async function handler(req: any, res: any) {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === 'MY_GEMINI_API_KEY' || apiKey.trim() === '') {
-      return res.status(500).json({
-        error:
-          'GEMINI_API_KEY environment variable is missing. Please set GEMINI_API_KEY in your Vercel project environment variables (Settings > Environment Variables) or local .env file.',
+      return res.status(200).json({
+        success: false,
+        isFallback: true,
+        text: '',
+        message: 'GEMINI_API_KEY is not configured yet. Using local intelligent template.',
       });
     }
 
@@ -55,55 +57,54 @@ export default async function handler(req: any, res: any) {
       }
     }
 
+    // Multi-model resilience cascade: if one experiences a temporary 503 or 429 spike, try the next
+    const candidateModels = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
     let responseText = '';
-    let attempts = 0;
-    const maxAttempts = 2; // Initial attempt + 1 retry
+    let lastError: any = null;
 
-    while (attempts < maxAttempts) {
-      attempts++;
+    for (const modelName of candidateModels) {
       try {
         const response = await ai.models.generateContent({
-          model: 'gemini-3.6-flash',
+          model: modelName,
           contents: prompt,
           config,
         });
 
-        responseText = response.text || '';
-        break; // Successfully generated!
+        if (response && response.text) {
+          responseText = response.text;
+          break; // Successfully generated!
+        }
       } catch (err: any) {
-        const errMessage = String(err?.message || err);
-        const isRateLimit =
-          errMessage.includes('429') ||
-          errMessage.includes('RESOURCE_EXHAUSTED') ||
-          err?.status === 429 ||
-          err?.code === 429;
-
-        if (isRateLimit && attempts < maxAttempts) {
-          // Automatic 1-time retry after 1.5s delay
-          await delay(1500);
-          continue;
-        }
-
-        if (isRateLimit) {
-          return res.status(429).json({
-            error: 'AI service is rate-limited, please try again shortly.',
-            isRateLimited: true,
-          });
-        }
-
-        throw err;
+        lastError = err;
+        console.warn(`Model ${modelName} encountered error, trying next candidate:`, err?.message || err);
+        // If rate-limited or high demand, brief backoff
+        await delay(500);
       }
     }
 
+    if (responseText) {
+      return res.status(200).json({
+        success: true,
+        text: responseText,
+        isFallback: false,
+      });
+    }
+
+    // If all models encountered spikes or errors, gracefully return fallback
+    console.error('All Gemini candidate models exhausted:', lastError?.message || lastError);
     return res.status(200).json({
-      success: true,
-      text: responseText,
-      isFallback: false,
+      success: false,
+      isFallback: true,
+      text: '',
+      message: 'AI service experiencing temporary high demand. Switched to smart local templates.',
     });
   } catch (error: any) {
-    console.error('Error in /api/ai/generate Vercel function:', error);
-    return res.status(500).json({
-      error: error.message || 'An error occurred during AI generation. Please try again later.',
+    console.error('Error in /api/ai/generate handler:', error);
+    return res.status(200).json({
+      success: false,
+      isFallback: true,
+      text: '',
+      error: error.message || 'An error occurred during AI generation. Switched to local fallback.',
     });
   }
 }

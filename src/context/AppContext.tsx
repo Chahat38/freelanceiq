@@ -794,6 +794,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const data = await res.json();
+      if (data.isFallback && data.message) {
+        showToast(data.message, 'info');
+      }
       return {
         success: data.success ?? true,
         text: data.text || '',
